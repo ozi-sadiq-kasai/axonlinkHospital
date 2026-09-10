@@ -62,30 +62,49 @@ const Back = ({ onClick }) => <button className="back" onClick={onClick} aria-la
 const Button = ({ children, className = "", ...props }) => <button className={`primary ${className}`} {...props}>{children}</button>;
 
 function FacilitySignup({ go }) {
-  const [values, setValues] = useState({ name: "", type: "", registration: "", email: "", phone: "", address: "", firstName: "", lastName: "", password: "" });
+  const [values, setValues] = useState({ name: "", type: "", category: "", registration: "", email: "", phone: "", address: "", firstName: "", lastName: "", password: "", confirmation: "", acceptedTerms: false });
   const [error, setError] = useState(""); const [busy,setBusy]=useState(false);
   const update = (key) => (event) => { setValues({ ...values, [key]: event.target.value }); setError(""); };
   const submit = async (event) => {
     event.preventDefault();
-    if (Object.values(values).some((value) => !value.trim())) return setError("Complete all fields to create your facility account");
+    const required = [values.name, values.type, values.category, values.registration, values.email, values.phone, values.address, values.firstName, values.lastName, values.password, values.confirmation];
+    if (required.some((value) => !value.trim())) return setError("Complete all fields to create your facility account");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) return setError("Enter a valid facility email address");
     if (values.password.length < 8 || !/[A-Z]/.test(values.password) || !/\d/.test(values.password)) return setError("Password must have 8 characters, one uppercase letter, and one number");
+    if (values.password !== values.confirmation) return setError("Passwords do not match");
+    if (!values.acceptedTerms) return setError("Agree to the Terms of Service to continue");
     setBusy(true);
     try { const result=await hospitalApi.registerFacility({facilityName:values.name,facilityType:values.type,registrationNumber:values.registration,email:values.email,phone:values.phone,addressLine:values.address,firstName:values.firstName,lastName:values.lastName,password:values.password}); sessionStorage.setItem("hospitalFacilitySignup",JSON.stringify({email:values.email,facility:result.facility})); go("facility-email-verification"); } catch(e){setError(e.message)} finally{setBusy(false)}
   };
-  return <Layout kind="documents"><form className="form signup-form" onSubmit={submit} noValidate>
-    <header><h1>Create Facility Account</h1><p>Register your healthcare facility to get started with AxonLink</p></header>
-    <div className="signup-grid">
-      <label>Facility Name<span className="input-wrap"><input value={values.name} onChange={update("name")} placeholder="Enter facility name" /></span></label>
-      <label>Facility Type<span className="input-wrap"><select value={values.type} onChange={update("type")}><option value="">Select facility type</option><option>Hospital</option><option>Clinic</option><option>Diagnostic Centre</option><option>Pharmacy</option><option>Other</option></select></span></label>
-      <label>Registration Number<span className="input-wrap"><input value={values.registration} onChange={update("registration")} placeholder="Enter CAC or registration number" /></span></label>
-      <label>Facility Email<span className="input-wrap"><input type="email" value={values.email} onChange={update("email")} placeholder="Enter facility email" /></span></label>
-      <label>Phone Number<span className="input-wrap"><input type="tel" value={values.phone} onChange={update("phone")} placeholder="Enter phone number" /></span></label>
-      <label>Facility Address<span className="input-wrap"><input value={values.address} onChange={update("address")} placeholder="Enter facility address" /></span></label>
-      <label>Administrator First Name<span className="input-wrap"><input value={values.firstName} onChange={update("firstName")} placeholder="Enter first name" /></span></label>
-      <label>Administrator Last Name<span className="input-wrap"><input value={values.lastName} onChange={update("lastName")} placeholder="Enter last name" /></span></label>
-    </div>
-    <PasswordInput label="Password" value={values.password} setValue={(password) => { setValues({ ...values, password }); setError(""); }} />
+  return <Layout kind="documents"><form className="form signup-form facility-signup-form" onSubmit={submit} noValidate>
+    <Back onClick={() => go("login")} />
+    <header><h1>Facility Sign Up</h1></header>
+    <section className="signup-section">
+      <span className="signup-section-title">Facility Details</span>
+      <label>Facility Name<span className="input-wrap"><input value={values.name} onChange={update("name")} placeholder="Enter Facility Name" /></span></label>
+      <label>Facility Email<span className="input-wrap"><input type="email" value={values.email} onChange={update("email")} placeholder="example@gmail.com" /></span></label>
+      <label>Phone Number<span className="input-wrap phone-input"><span className="phone-prefix">🇳🇬 +234⌄</span><input type="tel" inputMode="tel" value={values.phone} onChange={update("phone")} placeholder="810 047 5120" /></span></label>
+      <div className="signup-grid signup-grid--two">
+        <label>Facility Type<span className="input-wrap"><select value={values.type} onChange={update("type")}><option value="">Select Type</option><option>Hospital</option><option>Clinic</option><option>Diagnostic Centre</option><option>Pharmacy</option><option>Other</option></select></span></label>
+        <label>Facility Category<span className="input-wrap"><select value={values.category} onChange={update("category")}><option value="">Select Category</option><option>Private</option><option>Public</option><option>Faith-Based</option><option>Non-Profit</option><option>Other</option></select></span></label>
+      </div>
+      <label>Facility License Number<span className="input-wrap"><input value={values.registration} onChange={update("registration")} placeholder="Enter License Number" /></span></label>
+      <label>Facility Address<span className="input-wrap"><input value={values.address} onChange={update("address")} placeholder="Enter Facility Address" /></span></label>
+    </section>
+    <section className="signup-section">
+      <span className="signup-section-title">Administrator Details</span>
+      <div className="signup-grid signup-grid--two">
+        <label>First Name<span className="input-wrap"><input value={values.firstName} onChange={update("firstName")} placeholder="Enter First Name" /></span></label>
+        <label>Last Name<span className="input-wrap"><input value={values.lastName} onChange={update("lastName")} placeholder="Enter Last Name" /></span></label>
+      </div>
+    </section>
+    <section className="signup-section signup-security">
+      <span className="signup-section-title">Security</span>
+      <PasswordInput label="Create Password" value={values.password} setValue={(password) => { setValues({ ...values, password }); setError(""); }} />
+      <PasswordInput label="Confirm Password" value={values.confirmation} setValue={(confirmation) => { setValues({ ...values, confirmation }); setError(""); }} />
+      <p className="password-hint">ⓘ Password should be at least 8 characters</p>
+      <label className="terms-check"><input type="checkbox" checked={values.acceptedTerms} onChange={(event) => { setValues({ ...values, acceptedTerms: event.target.checked }); setError(""); }} /><span>I agree to the <button type="button">Terms of Service</button></span></label>
+    </section>
     {error && <p className="field-error">ⓘ {error}</p>}<Button type="submit" disabled={busy}>{busy?"Creating Account…":"Create Account"}</Button>
     <p className="signin-prompt">Already have an account? <button type="button" onClick={() => go("login")}>Log In</button></p>
   </form></Layout>;
