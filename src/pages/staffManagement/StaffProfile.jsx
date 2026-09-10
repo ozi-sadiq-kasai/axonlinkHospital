@@ -1,0 +1,16 @@
+import { useEffect, useState } from "react";
+import HospitalChrome from "../HospitalChrome";
+import { hospitalApi } from "../../hospitalApi";
+
+const shown=value=>value===undefined||value===null||value===""?"Not recorded":value;
+
+export default function StaffProfile({go}) {
+  const id=sessionStorage.getItem("selectedStaffId"); const [staff,setStaff]=useState(null); const [loading,setLoading]=useState(true); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
+  const load=()=>hospitalApi.getStaff(id).then(result=>setStaff(result.staff));
+  useEffect(()=>{if(!id){setLoading(false);return}let current=true;load().catch(next=>current&&setError(next.message)).finally(()=>current&&setLoading(false));return()=>{current=false}},[id]);
+  const changeStatus=async()=>{setBusy(true);setError("");try{await hospitalApi.setStaffStatus(id,staff.status==="SUSPENDED"?"ACTIVE":"SUSPENDED");await load()}catch(next){setError(next.message)}finally{setBusy(false)}};
+  const remove=async()=>{if(!window.confirm("Remove this staff member from the facility?"))return;setBusy(true);setError("");try{await hospitalApi.removeStaff(id);sessionStorage.removeItem("selectedStaffId");go("staff-management")}catch(next){setError(next.message);setBusy(false)}};
+  if(loading)return <HospitalChrome title="Staff Profile" active="staff-management" go={go}><div className="staff-profile-missing"><p>Loading staff profile…</p></div></HospitalChrome>;
+  if(!staff)return <HospitalChrome title="Staff Profile" active="staff-management" go={go}><div className="staff-profile-missing"><h2>Staff member not found</h2><p>{error||"The selected staff profile is unavailable."}</p><button onClick={()=>go("staff-management")}>Back to staff</button></div></HospitalChrome>;
+  return <HospitalChrome title="Staff Profile" active="staff-management" go={go}><main className="staff-profile"><button className="staff-back" onClick={()=>go("staff-management")}>←</button>{error&&<p className="staff-form-error">{error}</p>}<section className="profile-hero"><div><i>{staff.name?.[0]?.toUpperCase()||"?"}</i><span><h2>{shown(staff.name)}</h2><small>Joined {staff.joinedAt?new Date(staff.joinedAt).toLocaleDateString():"date not recorded"}</small></span></div><dl>{[["Role",staff.role],["Status",staff.status],["Department",staff.department],["Job Title",staff.jobTitle],["Staff ID",staff.staffId]].map(([key,value])=><div key={key}><dt>{key}</dt><dd>{shown(value)}</dd></div>)}</dl><footer><button disabled={busy} onClick={changeStatus}>{staff.status==="SUSPENDED"?"Restore Access":"Suspend Staff"}</button><button className="danger" disabled={busy} onClick={remove}>Remove Staff</button></footer></section><div className="profile-columns"><section><h3>Personal Information</h3><dl>{[["First Name",staff.firstName],["Last Name",staff.lastName],["Email",staff.email],["Phone",staff.phone],["Email Verified",staff.verified?"Yes":"No"]].map(([key,value])=><div key={key}><dt>{key}</dt><dd>{shown(value)}</dd></div>)}</dl></section><section><h3>Permissions</h3>{staff.permissions?.length?staff.permissions.map(permission=><p className="permission-row" key={permission}><span>{permission.replaceAll("_"," ")}</span><b>Allowed</b></p>):<div className="profile-empty">No effective permissions assigned.</div>}</section></div></main></HospitalChrome>;
+}
