@@ -26,4 +26,12 @@ describe("Hospital route protection",()=>{
     expect(location.hash).toBe("#/login");
     expect(screen.getByText("Hospital sign in")).toBeInTheDocument();
   });
+
+  it("continues from submitted credentials to facility sign in",()=>{
+    location.hash="#/credentials-success";
+    render(<App/>);
+    fireEvent.click(screen.getByRole("button",{name:"Proceed"}));
+    expect(location.hash).toBe("#/login");
+    expect(screen.getByText("Hospital sign in")).toBeInTheDocument();
+  });
 });

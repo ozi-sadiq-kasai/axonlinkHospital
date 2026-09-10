@@ -159,7 +159,7 @@ function NewPassword({ go }) {
 
 function Status({ type = "success", context = "credentials", go }) {
   const credentials = context === "credentials"; const failed = type === "error";
-  return <Layout kind={credentials ? "documents" : "lock"}><div className="status"><Icon type={failed ? "error" : "success"} /><h1>{failed ? "Unable to Submit" : credentials ? "Credentials Submitted" : "Password Successfully Reset"}</h1><p>{failed ? <>Your credentials couldn’t be submitted.<br />Check your details and try again.</> : credentials ? <>Your credentials have been received and are being reviewed.<br />An email will be sent once the process is complete.</> : <>You can now log-in using your new password</>}</p><Button onClick={() => go(failed ? "facility-3" : credentials ? "facility-1" : "forgot")}>{failed ? "Try Again" : credentials ? "Proceed" : "Proceed to Log In"}</Button></div></Layout>;
+  return <Layout kind={credentials ? "documents" : "lock"}><div className="status"><Icon type={failed ? "error" : "success"} /><h1>{failed ? "Unable to Submit" : credentials ? "Credentials Submitted" : "Password Successfully Reset"}</h1><p>{failed ? <>Your credentials couldn’t be submitted.<br />Check your details and try again.</> : credentials ? <>Your credentials have been received and are being reviewed.<br />An email will be sent once the process is complete.</> : <>You can now log-in using your new password</>}</p><Button onClick={() => go(failed ? "facility-3" : "login")}>{failed ? "Try Again" : credentials ? "Proceed" : "Proceed to Log In"}</Button></div></Layout>;
 }
 
 const stages = [
