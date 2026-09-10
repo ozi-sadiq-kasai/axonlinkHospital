@@ -87,7 +87,7 @@ function FacilitySignup({ go }) {
     </div>
     <PasswordInput label="Password" value={values.password} setValue={(password) => { setValues({ ...values, password }); setError(""); }} />
     {error && <p className="field-error">ⓘ {error}</p>}<Button type="submit" disabled={busy}>{busy?"Creating Account…":"Create Account"}</Button>
-    <p className="signin-prompt">Already have an account? <button type="button" onClick={() => go("forgot")}>Log In</button></p>
+    <p className="signin-prompt">Already have an account? <button type="button" onClick={() => go("login")}>Log In</button></p>
   </form></Layout>;
 }
 

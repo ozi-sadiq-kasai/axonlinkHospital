@@ -23,5 +23,6 @@ export default function FacilitySignIn({ go, ui }) {
     <button className="forgot-link" type="button" onClick={() => go("forgot")}>Forgot Password</button>
     {error && <p className="field-error">ⓘ {error}</p>}
     <Button type="submit" disabled={busy}>{busy?"Logging In…":"Log In"}</Button>
+    <p className="signin-prompt">New to AxonLink? <button type="button" onClick={() => go("facility-signup")}>Register Facility</button></p>
   </form></Layout>;
 }
