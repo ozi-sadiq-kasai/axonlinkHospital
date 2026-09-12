@@ -2,11 +2,13 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listPatients, session } = vi.hoisted(() => ({
+const { listPatients, listStaff, listAppointments, session } = vi.hoisted(() => ({
   listPatients: vi.fn(),
+  listStaff: vi.fn(),
+  listAppointments: vi.fn(),
   session: vi.fn(() => ({ membership: { facility: { name: "Saferview Hospital" } } }))
 }));
-vi.mock("../hospitalApi", () => ({ hospitalApi: { listPatients, session } }));
+vi.mock("../hospitalApi", () => ({ hospitalApi: { listPatients, listStaff, listAppointments, session } }));
 vi.mock("../pages/hospitalData", () => ({
   useHospitalData: () => ({
     data: { appointments: [], staff: [], referrals: [] },
@@ -31,6 +33,10 @@ describe("live facility patient totals", () => {
   beforeEach(() => {
     listPatients.mockReset();
     listPatients.mockResolvedValue({ patients: livePatients });
+    listStaff.mockReset();
+    listStaff.mockResolvedValue({ staff: [], invitations: [] });
+    listAppointments.mockReset();
+    listAppointments.mockResolvedValue({ appointments: [] });
   });
 
   it("uses the live patient directory total on Home", async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate, formatTime } from "../hospitalData";
 import { hospitalApi } from "../../hospitalApi";
+import { mapFacilityAppointment } from "../home/useFacilityOperations";
 
 const states = ["PENDING","UPCOMING","DECLINED","EXPIRED"];
 const patientFor = (data,item) => data.patients.find(patient => (patient.name || `${patient.firstName} ${patient.lastName}`).toLowerCase() === item.patient?.toLowerCase());
@@ -9,7 +10,7 @@ export default function PendingRequests({ appointments = [], onChange = () => {}
   const [options,setOptions]=useState({patients:[],clinicians:[]});
   useEffect(()=>{let live=true;hospitalApi.appointmentOptions().then(result=>{if(live)setOptions(result)}).catch(()=>{});return()=>{live=false}},[]);
   const data={appointments,patients:options.patients||[],staff:(options.clinicians||[]).map(item=>({...item,id:item.membershipId,role:item.role}))};
-  const updateAppointment=async(id,change)=>{const doctor=data.staff.find(item=>item.name===change.clinician);const payload={...(change.status?{status:change.status==="UPCOMING"?"CONFIRMED":change.status}:{}),...(change.start?{date:new Date(change.start).toISOString()}:{}),...(doctor?{clinicianMembershipId:doctor.membershipId}:{})};const result=await hospitalApi.updateAppointment(id,payload);const item=result.appointment;onChange(current=>current.map(existing=>existing.id===id?{...item,start:item.date,end:item.date,type:item.visitType,status:item.status==="CONFIRMED"?"UPCOMING":item.status==="CANCELLED"?"CANCELED":item.status}:existing));};
+  const updateAppointment=async(id,change)=>{const doctor=data.staff.find(item=>item.name===change.clinician);const payload={...(change.status?{status:change.status==="UPCOMING"?"CONFIRMED":change.status}:{}),...(change.start?{date:new Date(change.start).toISOString()}:{}),...(doctor?{clinicianMembershipId:doctor.membershipId}:{})};const result=await hospitalApi.updateAppointment(id,payload);const item=mapFacilityAppointment(result.appointment);onChange(current=>current.map(existing=>existing.id===id?item:existing));};
   const pending = data.appointments.filter(item=>item.status==="PENDING");
   const history = data.appointments.filter(item=>["DECLINED","EXPIRED"].includes(item.status));
   const [flow,setFlow]=useState(null); const [selected,setSelected]=useState(null); const [doctor,setDoctor]=useState(""); const [result,setResult]=useState(null);

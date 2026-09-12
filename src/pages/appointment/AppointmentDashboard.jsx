@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import HospitalChrome from "../HospitalChrome";
 import { formatDate, formatTime } from "../hospitalData";
-import { hospitalApi } from "../../hospitalApi";
 import PendingRequests from "./PendingRequests";
+import { useFacilityAppointments } from "../home/useFacilityOperations";
 
 const dayKey = (value) => new Date(value).toDateString();
 const Empty = ({ title, text }) => <div className="appointment-empty"><span>▣</span><h3>{title}</h3><p>{text}</p></div>;
 
 export default function AppointmentDashboard({ go }) {
-  const [appointmentsData,setAppointmentsData]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");
-  useEffect(()=>{let live=true;hospitalApi.listAppointments().then(result=>{if(live)setAppointmentsData((result.appointments||[]).map(item=>({...item,start:item.date,end:item.date,type:item.visitType,status:item.status==="CONFIRMED"?"UPCOMING":item.status==="CANCELLED"?"CANCELED":item.status})))}).catch(reason=>{if(live)setError(reason.message)}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[]);
+  const { appointments: appointmentsData, setAppointments: setAppointmentsData, loading, error } = useFacilityAppointments();
   const [tab, setTab] = useState("appointments");
   const [view, setView] = useState("schedule");
   const [filterOpen, setFilterOpen] = useState(false);
