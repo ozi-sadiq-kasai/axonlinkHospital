@@ -1,143 +1,86 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { hospitalApi } from "../hospitalApi";
 
-const KEY = "axonlink-hospital-data-v1";
-const EMPTY = { appointments: [], patients: [], staff: [], referrals: [], alerts: [], activityLogs: [], users: [], messages: [], notifications: [], facility: {}, settings: {} };
+const EMPTY = Object.freeze({ appointments: [], patients: [], staff: [], referrals: [], alerts: [], activityLogs: [], users: [], messages: [], notifications: [], facility: {}, settings: {} });
+const selectedPatientId = () => window.sessionStorage.getItem("selectedPatientId");
+const valueOf = (result, key, fallback) => result.status === "fulfilled" ? (result.value?.[key] ?? fallback) : fallback;
+const facilityFromSession = () => hospitalApi.session()?.membership?.facility || {};
+const mapAppointment = (item) => ({
+  ...item,
+  start: item.start || item.date,
+  status: item.status === "CONFIRMED" ? "UPCOMING" : item.status === "CANCELLED" ? "CANCELED" : item.status
+});
+const apiAppointmentChange = (change) => {
+  if (typeof change !== "string") return { ...change, ...(change?.status === "UPCOMING" ? { status: "CONFIRMED" } : change?.status === "CANCELED" ? { status: "CANCELLED" } : {}) };
+  return { status: change === "UPCOMING" ? "CONFIRMED" : change === "CANCELED" ? "CANCELLED" : change };
+};
+const apiReferralChange = (change) => typeof change !== "string" ? change : ({ ACCEPTED: "accept", DECLINED: "decline", CANCELED: "cancel", CANCELLED: "cancel", COMPLETED: "complete" }[change.toUpperCase()] || change);
+const verificationDocumentName = (type) => ({
+  REGISTRATION_CERTIFICATE: "Facility Registration Certificate", ADMIN_ID: "Valid ID of Facility Owner / Admin",
+  FACILITY_LICENSE: "Healthcare Facility License", MEDICAL_DIRECTOR_LICENSE: "Medical Director’s Practicing License",
+  ADDRESS_PROOF: "Proof of Facility Address"
+}[type] || type);
 
+// Server records stay in React memory. The legacy browser cache is removed on
+// mount because clinical and operational data must come from the shared API.
 export function useHospitalData() {
-  const [data, setData] = useState(() => {
-    try { return { ...EMPTY, ...JSON.parse(window.localStorage.getItem(KEY)) }; }
-    catch { return EMPTY; }
-  });
-  useEffect(() => { window.localStorage.setItem(KEY, JSON.stringify(data)); }, [data]);
-  const addAppointment = (appointment) => setData((current) => ({
-    ...current,
-    appointments: [...current.appointments, { ...appointment, id: crypto.randomUUID(), status: appointment.status || "UPCOMING" }],
-    patients: current.patients.some((patient) => patient.name.toLowerCase() === appointment.patient.toLowerCase()) ? current.patients : [...current.patients, { id: crypto.randomUUID(), name: appointment.patient }],
-  }));
-  const addPatient = (patient) => {
-    const created = { ...patient, id: crypto.randomUUID(), createdAt: new Date().toISOString(), visits: [], records: {} };
-    setData((current) => ({ ...current, patients: [...current.patients, created] }));
-    return created;
+  const [data, setData] = useState(() => ({ ...EMPTY, facility: facilityFromSession() }));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    window.localStorage.removeItem("axonlink-hospital-data-v1");
+    setLoading(true); setError("");
+    const patientId = selectedPatientId();
+    const results = await Promise.allSettled([
+      hospitalApi.listAppointments(), hospitalApi.listPatients(), hospitalApi.listStaff(),
+      hospitalApi.listReferrals(), hospitalApi.listNotifications(), hospitalApi.getVerificationStatus(),
+      patientId ? hospitalApi.clinicalRecords(patientId) : Promise.resolve(null)
+    ]);
+    const [appointments, patients, staff, referrals, notifications, verification, clinical] = results;
+    const failed = results.slice(0, 6).find((item) => item.status === "rejected");
+    const patientList = valueOf(patients, "patients", []);
+    const clinicalPatient = clinical.status === "fulfilled" ? clinical.value?.patient : null;
+    const staffRecords = valueOf(staff, "staff", []);
+    const invitations = valueOf(staff, "invitations", []).map((item) => ({ ...item, pendingInvitation: true, name: item.email }));
+    const documents = valueOf(verification, "documents", []).map((item) => ({ ...item, name: verificationDocumentName(item.type), fileName: item.originalName, uploadedAt: item.createdAt }));
+    setData({
+      ...EMPTY,
+      appointments: valueOf(appointments, "appointments", []).map(mapAppointment),
+      patients: clinicalPatient ? patientList.map((item) => item.id === clinicalPatient.id ? clinicalPatient : item) : patientList,
+      staff: [...staffRecords, ...invitations],
+      referrals: valueOf(referrals, "referrals", []),
+      notifications: valueOf(notifications, "notifications", []),
+      facility: { ...facilityFromSession(), ...(verification.status === "fulfilled" ? verification.value?.facility : {}) },
+      settings: { verificationDocuments: documents },
+      activityLogs: clinical.status === "fulfilled" ? (clinical.value?.audit || []).map((item) => ({ ...item, type: "PATIENT_ACCESS", staffName: item.actor?.name, recordType: item.categories?.join(", ") })) : []
+    });
+    if (failed) setError(failed.reason?.message || "Some hospital information could not be loaded.");
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  const unsupported = async () => { throw new Error("This feature is not available until its shared-backend endpoint is enabled."); };
+  const updateAppointment = async (id, change) => { const result = await hospitalApi.updateAppointment(id, apiAppointmentChange(change)); await load(); return result?.appointment || result; };
+  const updateReferral = async (id, change) => { const result = await hospitalApi.updateReferral(id, apiReferralChange(change)); await load(); return result?.referral || result; };
+  const updateStaff = async (id, change) => { if (!change?.status) return unsupported(); await hospitalApi.setStaffStatus(id, change.status); await load(); };
+  const removeStaff = async (id) => { await hospitalApi.removeStaff(id); await load(); };
+  const updateNotification = async (id, change) => { if (change?.read) await hospitalApi.markNotificationRead(id); setData((current) => ({ ...current, notifications: current.notifications.map((item) => item.id === id ? { ...item, ...change } : item) })); };
+  const deleteNotification = async (id) => { await hospitalApi.deleteNotification(id); setData((current) => ({ ...current, notifications: current.notifications.filter((item) => item.id !== id) })); };
+  const updateFacility = async (change) => { const result = await hospitalApi.updateFacility(change); await load(); return result?.facility || result; };
+
+  return {
+    data, loading, error, reload: load,
+    addAppointment: hospitalApi.createAppointment, addPatient: hospitalApi.registerPatient, addVisit: unsupported,
+    addHealthCondition: (id, value) => hospitalApi.createClinicalRecord(id, "conditions", value), updateHealthCondition: (id, recordId, value) => hospitalApi.updateClinicalRecord(id, "conditions", recordId, value), addConditionNote: unsupported,
+    addMedication: (id, value) => hospitalApi.createClinicalRecord(id, "medications", value), updateMedication: (id, recordId, value) => hospitalApi.updateClinicalRecord(id, "medications", recordId, value),
+    addAllergy: (id, value) => hospitalApi.createClinicalRecord(id, "allergies", value), updateAllergy: (id, recordId, value) => hospitalApi.updateClinicalRecord(id, "allergies", recordId, value), addAllergyNote: unsupported,
+    addLab: (id, value) => hospitalApi.createClinicalRecord(id, "labs", value), updateLab: (id, recordId, value) => hospitalApi.updateClinicalRecord(id, "labs", recordId, value),
+    addVaccination: (id, value) => hospitalApi.createClinicalRecord(id, "vaccinations", value), updateVaccination: (id, recordId, value) => hospitalApi.updateClinicalRecord(id, "vaccinations", recordId, value),
+    updateAppointment, updateReferral, addStaff: unsupported, updateStaff, removeStaff,
+    sendMessage: unsupported, updateNotification, deleteNotification, updateFacility, updateHospitalSettings: unsupported
   };
-  const addVisit = (patientId, visit) => {
-    const created = { ...visit, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
-    setData((current) => ({
-      ...current,
-      patients: current.patients.map((patient) => patient.id === patientId
-        ? { ...patient, visits: [...(patient.visits || []), created] }
-        : patient),
-    }));
-    return created;
-  };
-  const addHealthCondition = (patientId, condition) => {
-    const createdAt = new Date().toISOString();
-    const created = { ...condition, id: crypto.randomUUID(), createdAt, updatedAt: createdAt, notes: condition.notes || [], medications: condition.medications || [], investigations: condition.investigations || [], history: condition.history || [] };
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), conditions: [...(patient.records?.conditions || []), created] },
-    } : patient) }));
-    return created;
-  };
-  const updateHealthCondition = (patientId, conditionId, changes) => {
-    const updatedAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), conditions: (patient.records?.conditions || []).map((condition) => condition.id === conditionId ? {
-        ...condition,
-        ...changes,
-        updatedAt,
-        history: [...(condition.history || []), { id: crypto.randomUUID(), changedAt: updatedAt, previous: condition }],
-      } : condition) },
-    } : patient) }));
-  };
-  const addConditionNote = (patientId, conditionId, note) => {
-    const createdAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), conditions: (patient.records?.conditions || []).map((condition) => condition.id === conditionId ? {
-        ...condition,
-        updatedAt: createdAt,
-        notes: [...(condition.notes || []), { ...note, id: crypto.randomUUID(), createdAt }],
-      } : condition) },
-    } : patient) }));
-  };
-  const addMedication = (patientId, medication) => {
-    const createdAt = new Date().toISOString();
-    const created = { ...medication, id: crypto.randomUUID(), createdAt, updatedAt: createdAt, history: [] };
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), medications: [...(patient.records?.medications || []), created] },
-    } : patient) }));
-    return created;
-  };
-  const updateMedication = (patientId, medicationId, changes) => {
-    const updatedAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), medications: (patient.records?.medications || []).map((medication) => medication.id === medicationId ? {
-        ...medication,
-        ...changes,
-        updatedAt,
-        history: [...(medication.history || []), { id: crypto.randomUUID(), changedAt: updatedAt, previous: medication }],
-      } : medication) },
-    } : patient) }));
-  };
-  const addAllergy = (patientId, allergy) => {
-    const createdAt = new Date().toISOString();
-    const created = { ...allergy, id: crypto.randomUUID(), createdAt, updatedAt: createdAt, history: [], notes: [] };
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), allergies: [...(patient.records?.allergies || []), created] },
-    } : patient) }));
-    return created;
-  };
-  const updateAllergy = (patientId, allergyId, changes) => {
-    const updatedAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), allergies: (patient.records?.allergies || []).map((allergy) => allergy.id === allergyId ? { ...allergy, ...changes, updatedAt, history: [...(allergy.history || []), { id: crypto.randomUUID(), changedAt: updatedAt, previous: allergy }] } : allergy) },
-    } : patient) }));
-  };
-  const addAllergyNote = (patientId, allergyId, note) => {
-    const createdAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? {
-      ...patient,
-      records: { ...(patient.records || {}), allergies: (patient.records?.allergies || []).map((allergy) => allergy.id === allergyId ? { ...allergy, updatedAt: createdAt, notes: [...(allergy.notes || []), { ...note, id: crypto.randomUUID(), createdAt }] } : allergy) },
-    } : patient) }));
-  };
-  const addRecord = (patientId, key, record) => {
-    const createdAt = new Date().toISOString();
-    const created = { ...record, id: crypto.randomUUID(), createdAt, updatedAt: createdAt, history: [] };
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? { ...patient, records: { ...(patient.records || {}), [key]: [...(patient.records?.[key] || []), created] } } : patient) }));
-    return created;
-  };
-  const updateRecord = (patientId, key, recordId, changes) => {
-    const updatedAt = new Date().toISOString();
-    setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === patientId ? { ...patient, records: { ...(patient.records || {}), [key]: (patient.records?.[key] || []).map((record) => record.id === recordId ? { ...record, ...changes, updatedAt, history: [...(record.history || []), { id: crypto.randomUUID(), changedAt: updatedAt, previous: record }] } : record) } } : patient) }));
-  };
-  const addLab = (patientId, record) => addRecord(patientId, "labs", record);
-  const updateLab = (patientId, recordId, changes) => updateRecord(patientId, "labs", recordId, changes);
-  const addVaccination = (patientId, record) => addRecord(patientId, "vaccinations", record);
-  const updateVaccination = (patientId, recordId, changes) => updateRecord(patientId, "vaccinations", recordId, changes);
-  const updateAppointment = (id, change) => setData((current) => ({ ...current, appointments: current.appointments.map((item) => item.id === id ? { ...item, ...(typeof change === "string" ? { status: change } : change) } : item) }));
-  const updateReferral = (id, change) => setData((current) => ({
-    ...current,
-    referrals: current.referrals.map((item) => item.id === id ? { ...item, ...(typeof change === "string" ? { status: change } : change) } : item),
-  }));
-  const addStaff = (staff) => {
-    const created = { ...staff, id: crypto.randomUUID(), createdAt: new Date().toISOString(), status: staff.status || "PENDING" };
-    setData((current) => ({ ...current, staff: [...current.staff, created] }));
-    return created;
-  };
-  const updateStaff = (id, change) => setData((current) => ({ ...current, staff: current.staff.map((item) => item.id === id ? { ...item, ...change } : item) }));
-  const removeStaff = (id) => setData((current) => ({ ...current, staff: current.staff.filter((item) => item.id !== id) }));
-  const sendMessage = (message) => setData((current) => ({ ...current, messages: [...current.messages, { ...message, id: crypto.randomUUID(), createdAt: new Date().toISOString(), read: true }] }));
-  const updateNotification = (id, change) => setData((current) => ({ ...current, notifications: current.notifications.map((item) => item.id === id ? { ...item, ...change } : item) }));
-  const deleteNotification = (id) => setData((current) => ({ ...current, notifications: current.notifications.filter((item) => item.id !== id) }));
-  const updateFacility = (change) => setData((current) => ({ ...current, facility: { ...current.facility, ...change } }));
-  const updateHospitalSettings = (change) => setData((current) => ({ ...current, settings: { ...current.settings, ...change } }));
-  return { data, addAppointment, addPatient, addVisit, addHealthCondition, updateHealthCondition, addConditionNote, addMedication, updateMedication, addAllergy, updateAllergy, addAllergyNote, addLab, updateLab, addVaccination, updateVaccination, updateAppointment, updateReferral, addStaff, updateStaff, removeStaff, sendMessage, updateNotification, deleteNotification, updateFacility, updateHospitalSettings };
 }
 
-export function formatTime(value) { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
-export function formatDate(value) { return new Date(value).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }); }
+export function formatTime(value) { return value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Time not recorded"; }
+export function formatDate(value) { return value ? new Date(value).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : "Date not recorded"; }

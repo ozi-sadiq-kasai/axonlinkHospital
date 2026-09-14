@@ -29,5 +29,10 @@ export const hospitalApi={
  listReferrals:()=>{const session=read();if(!session?.membership?.facility?.id)throw new Error("Select an active facility workspace first.");return request(`/api/facilities/${session.membership.facility.id}/referrals`,{},true)},
  getReferral:referralId=>{const session=read();if(!session?.membership?.facility?.id)throw new Error("Select an active facility workspace first.");return request(`/api/facilities/${session.membership.facility.id}/referrals/${encodeURIComponent(referralId)}`,{},true)},
  updateReferral:(referralId,change)=>{const session=read();if(!session?.membership?.facility?.id)throw new Error("Select an active facility workspace first.");return request(`/api/facilities/${session.membership.facility.id}/referrals/${encodeURIComponent(referralId)}`,{method:"PATCH",body:JSON.stringify(typeof change==="string"?{action:change}:change)},true)},
+ getVerificationStatus:()=>{const session=read();if(!session?.membership?.facility?.id)throw new Error("Select an active facility workspace first.");return request(`/api/facilities/${session.membership.facility.id}/verification-documents`,{},true)},
+ updateFacility:values=>{const session=read();if(!session?.membership?.facility?.id)throw new Error("Select an active facility workspace first.");return request(`/api/facilities/${session.membership.facility.id}`,{method:"PATCH",body:JSON.stringify(values)},true)},
+ listNotifications:()=>request("/api/me/notifications",{},true),
+ markNotificationRead:id=>request(`/api/me/notifications/${encodeURIComponent(id)}/read`,{method:"PUT"},true),
+ deleteNotification:id=>request(`/api/me/notifications/${encodeURIComponent(id)}`,{method:"DELETE"},true),
  logout:async()=>{const current=read();try{await request("/api/auth/logout",{method:"POST",body:JSON.stringify({refreshToken:current?.refreshToken||""})})}finally{write(null)}}
 };

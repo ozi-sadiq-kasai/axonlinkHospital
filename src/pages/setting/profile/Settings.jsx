@@ -17,16 +17,19 @@ export default function Settings({ go }) {
   const [active, setActive] = useState("Facility Profile");
   const [view, setView] = useState("");
   const [modal, setModal] = useState(null);
+  const [feedback, setFeedback] = useState("");
   const facility = data.facility || {};
   const settings = data.settings || {};
-  const saveSettings = (change) => updateHospitalSettings(change);
+  const saveSettings = async (change) => { try { await updateHospitalSettings(change); } catch (reason) { setFeedback(reason.message); } };
+  const saveFacility = async (change) => { try { await updateFacility(change); setFeedback("Facility profile updated."); } catch (reason) { setFeedback(reason.message); } };
+  const saveStaff = async (id, change) => { try { await updateStaff(id, change); } catch (reason) { setFeedback(reason.message); } };
   const verificationStatus = settings.verificationDocuments?.length ? "In progress" : "Unverified";
   const content = active === "Facility Profile" ? <FacilityProfile facility={facility} setModal={setModal} />
     : active === "Verification" ? <Verification documents={settings.verificationDocuments || []} saveSettings={saveSettings} />
     : active === "Service Management" ? <Services settings={settings} saveSettings={saveSettings} setModal={setModal} />
-    : active === "Access Management" ? <Access settings={settings} staff={data.staff} saveSettings={saveSettings} updateStaff={updateStaff} setModal={setModal} />
+    : active === "Access Management" ? <Access settings={settings} staff={data.staff} saveSettings={saveSettings} updateStaff={saveStaff} setModal={setModal} />
     : <Security settings={settings} saveSettings={saveSettings} view={view} setView={setView} setModal={setModal} />;
-  return <HospitalChrome title="Setting" active="settings" go={go}><div className="settings-page"><aside className="settings-nav">{sections.map((item) => <button key={item} className={active === item ? "active" : ""} onClick={() => { setActive(item); setView(""); }}>{item}{item === "Verification" && <small>{verificationStatus}</small>}</button>)}<button className="signout" onClick={async()=>{await hospitalApi.logout();go("login")}}>Sign Out</button></aside><div className="settings-content">{content}</div></div>{modal && <SettingsModal modal={modal} close={() => setModal(null)} facility={facility} updateFacility={updateFacility} settings={settings} saveSettings={saveSettings} updateStaff={updateStaff} />}</HospitalChrome>;
+  return <HospitalChrome title="Setting" active="settings" go={go}><div className="settings-page"><aside className="settings-nav">{sections.map((item) => <button key={item} className={active === item ? "active" : ""} onClick={() => { setActive(item); setView(""); setFeedback(""); }}>{item}{item === "Verification" && <small>{verificationStatus}</small>}</button>)}<button className="signout" onClick={async()=>{await hospitalApi.logout();go("login")}}>Sign Out</button></aside><div className="settings-content">{feedback && <p className="settings-feedback">{feedback}</p>}{content}</div></div>{modal && <SettingsModal modal={modal} close={() => setModal(null)} facility={facility} updateFacility={saveFacility} settings={settings} saveSettings={saveSettings} updateStaff={saveStaff} />}</HospitalChrome>;
 }
 
 function FacilityProfile({ facility, setModal }) {
@@ -36,10 +39,9 @@ function FacilityProfile({ facility, setModal }) {
 }
 function InfoCard({ title, values, onEdit }) { return <section className="settings-card"><header><h3>{title}</h3><button onClick={onEdit}>Edit</button></header><div className="settings-info-grid">{values.map(([label, value]) => <div key={label}><small>{label}</small><strong>{show(value)}</strong></div>)}</div></section>; }
 
-function Verification({ documents, saveSettings }) {
+function Verification({ documents }) {
   const stages = [["Stage 1", "Confirm the facility is a registered organization", ["Facility Registration Certificate", "Valid ID of Facility Owner / Admin"]], ["Stage 2", "Confirm the facility can provide healthcare services", ["Healthcare Facility License", "Medical Director’s Practicing License"]], ["Stage 3", "Trust and quality verification", ["Proof of Facility Address"]]];
-  const upload = (name, file) => { if (!file) return; const next = documents.filter((item) => item.name !== name).concat({ name, fileName: file.name, status: "PENDING", uploadedAt: new Date().toISOString() }); saveSettings({ verificationDocuments: next }); };
-  return <><h2>Verification</h2><section className="settings-hero">▤ <div><b>License and Credentials Verification</b><p>Verify your facility license and credentials.</p></div></section>{stages.map(([title, text, items]) => <section className="settings-card verification-stage" key={title}><header><div><h3>{title}</h3><p>{text}</p></div></header>{items.map((name) => { const doc = documents.find((item) => item.name === name); return <label className="verification-row" key={name}><span><b>{name}</b><small>{doc?.fileName || "No document uploaded"}</small></span><em className={doc ? "pending" : ""}>{doc?.status || "Upload"}</em><input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(event) => upload(name, event.target.files?.[0])} /></label>; })}</section>)}</>;
+  return <><h2>Verification</h2><section className="settings-hero">▤ <div><b>License and Credentials Verification</b><p>Verification documents shown here come from the shared AxonLink service.</p></div></section>{stages.map(([title, text, items]) => <section className="settings-card verification-stage" key={title}><header><div><h3>{title}</h3><p>{text}</p></div></header>{items.map((name) => { const doc = documents.find((item) => item.name === name); return <div className="verification-row" key={name}><span><b>{name}</b><small>{doc?.fileName || "No document uploaded"}</small></span><em className={doc ? "pending" : ""}>{doc?.status || "Not submitted"}</em></div>; })}</section>)}</>;
 }
 
 function Services({ settings, saveSettings, setModal }) {
